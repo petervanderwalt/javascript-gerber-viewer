@@ -4,49 +4,55 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // === DOM ELEMENT REFERENCES ===
 const uploadInput = document.getElementById('gerber-upload');
-const updateBtn = document.getElementById('update-colors-btn');
-const silkColorInput = document.getElementById('silkscreen-color');
-const solderColorInput = document.getElementById('soldermask-color');
-const copperColorInput = document.getElementById('copper-color');
-const topContainer = document.getElementById('view-2d-top');
-const bottomContainer = document.getElementById('view-2d-bottom');
 const threeContainer = document.getElementById('view-3d');
 const loadingMessage = document.getElementById('loading-message');
-const tabs = document.querySelectorAll('.tab-button');
-const tabContents = document.querySelectorAll('.tab-content');
+
+// Sidebar elements
+const sidebar = document.getElementById('sidebar');
+const topThumbContainer = document.getElementById('view-2d-top-thumb');
+const bottomThumbContainer = document.getElementById('view-2d-bottom-thumb');
+const downloadTopBtn = document.getElementById('download-top-svg');
+const downloadBottomBtn = document.getElementById('download-bottom-svg');
+
+// Navbar controls
+const soldermaskBtnGroup = document.getElementById('soldermask-colors');
+const silkscreenBtnGroup = document.getElementById('silkscreen-colors');
+const copperFinishBtnGroup = document.getElementById('copper-finish');
 
 // === THREE.JS SHARED VARIABLES ===
 let scene, camera, renderer, controls, pcbGroup, svgLoader;
-let isThreeJsInitialized = false;
 
 // === DATA STORE ===
 let loadedLayers = [];
-let lastStackup = null;
 
-// === EVENT LISTENERS ===
+// === INITIALIZATION & EVENT LISTENERS ===
+initThree();
 uploadInput.addEventListener('change', handleFileSelect);
-updateBtn.addEventListener('click', () => renderAllViews(loadedLayers));
-tabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
+
+// Listen for clicks on the color/finish option buttons
+soldermaskBtnGroup.addEventListener('click', handleOptionChange);
+silkscreenBtnGroup.addEventListener('click', handleOptionChange);
+copperFinishBtnGroup.addEventListener('click', handleOptionChange);
 
 // === CORE LOGIC ===
 
-function handleTabSwitch(event) {
-    const targetTab = event.currentTarget.dataset.tab;
-    tabs.forEach(tab => tab.classList.remove('active'));
-    tabContents.forEach(content => content.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-    document.getElementById(targetTab).classList.add('active');
+function getActiveColor(group) {
+    const activeButton = group.querySelector('.btn.active');
+    return activeButton ? activeButton.dataset.color : null;
+}
 
-    if (targetTab === 'view-3d') {
-        if (!isThreeJsInitialized) {
-            initThree();
-            isThreeJsInitialized = true;
-            // If we have data already, render it now
-            if (lastStackup) {
-                update3DView(lastStackup);
-            }
-        }
-        onWindowResize(); // Always call resize
+function handleOptionChange(event) {
+    const button = event.target.closest('button');
+    if (!button) return;
+
+    const group = button.parentElement;
+    // Update active state in the button group
+    group.querySelectorAll('.btn').forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
+
+    // Re-render views if we have layer data
+    if (loadedLayers.length > 0) {
+        renderAllViews(loadedLayers);
     }
 }
 
@@ -60,8 +66,9 @@ function hexToRgba(hex, alpha) {
 function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
+
     loadingMessage.style.display = 'block';
-    updateBtn.disabled = true;
+    //sidebar.classList.add('d-none'); // Hide sidebar while processing new file
 
     JSZip.loadAsync(file)
         .then(zip => {
@@ -85,23 +92,20 @@ function renderAllViews(layers) {
 
     loadingMessage.style.display = 'block';
     const layersCopy = JSON.parse(JSON.stringify(layers));
-    const soldermaskRgba = hexToRgba(solderColorInput.value, 0.75);
 
-    // fr4	Substrate
-    // cu	Copper
-    // cf	Copper (finished)
-    // sm	Soldermask
-    // ss	Silkscreen
-    // sp	Solderpaste
-    // out	Board outline
+    // Get current colors from active buttons
+    const soldermaskColor = getActiveColor(soldermaskBtnGroup);
+    const silkscreenColor = getActiveColor(silkscreenBtnGroup);
+    const finishedCopperColor = getActiveColor(copperFinishBtnGroup);
+    const soldermaskRgba = hexToRgba(soldermaskColor, 0.75);
 
     const options = {
         color: {
           sm: soldermaskRgba,
-          ss: silkColorInput.value,
-          cu: copperColorInput.value,
+          ss: silkscreenColor,
+          cu: '#C09548',
           fr4: '#ECD39E',
-          cf: '#999',
+          cf: finishedCopperColor,
           sp: '#999',
           out: '#000'
         }
@@ -109,15 +113,42 @@ function renderAllViews(layers) {
 
     pcbStackup(layersCopy, options)
         .then(stackup => {
-            lastStackup = stackup;
-            topContainer.innerHTML = stackup.top.svg;
-            bottomContainer.innerHTML = stackup.bottom.svg;
+            // Update the 3D view first
+            update3DView(stackup);
 
-            if (isThreeJsInitialized) {
-                update3DView(stackup);
+            let hasContent = false;
+
+            // Populate top view thumbnail and download link
+            if (stackup && stackup.top && stackup.top.svg) {
+                topThumbContainer.innerHTML = stackup.top.svg;
+                const topSvgBlob = new Blob([stackup.top.svg], { type: 'image/svg+xml;charset=utf-8' });
+                downloadTopBtn.href = URL.createObjectURL(topSvgBlob);
+                downloadTopBtn.classList.remove('disabled');
+                hasContent = true;
+            } else {
+                topThumbContainer.innerHTML = '<p class="text-muted text-center small p-2">No top view generated.</p>';
+                downloadTopBtn.href = '#';
+                downloadTopBtn.classList.add('disabled');
             }
 
-            updateBtn.disabled = false;
+            // Populate bottom view thumbnail and download link
+            if (stackup && stackup.bottom && stackup.bottom.svg) {
+                bottomThumbContainer.innerHTML = stackup.bottom.svg;
+                const bottomSvgBlob = new Blob([stackup.bottom.svg], { type: 'image/svg+xml;charset=utf-8' });
+                downloadBottomBtn.href = URL.createObjectURL(bottomSvgBlob);
+                downloadBottomBtn.classList.remove('disabled');
+                hasContent = true;
+            } else {
+                bottomThumbContainer.innerHTML = '<p class="text-muted text-center small p-2">No bottom view generated.</p>';
+                downloadBottomBtn.href = '#';
+                downloadBottomBtn.classList.add('disabled');
+            }
+
+            // Only show the sidebar if we successfully generated at least one view
+            if (hasContent) {
+                //sidebar.classList.remove('d-none');
+            }
+
             loadingMessage.style.display = 'none';
         })
         .catch(handleError);
@@ -125,13 +156,14 @@ function renderAllViews(layers) {
 
 function handleError(error) {
     console.error('An error occurred:', error);
-    alert('An error occurred. Check the console for details.');
+    alert('An error occurred processing the Gerber files. Check the console for details.');
+    // Ensure UI is in a clean state after an error
+    //sidebar.classList.add('d-none');
     loadingMessage.style.display = 'none';
 }
 
 // === THREE.JS FUNCTIONS ===
 
-// === THREE.JS SETUP ===
 function initThree() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf0f0f0);
@@ -144,25 +176,20 @@ function initThree() {
     renderer.setPixelRatio(window.devicePixelRatio);
     threeContainer.appendChild(renderer.domElement);
 
-    // OrbitControls
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.screenSpacePanning = false;
     controls.minDistance = 10;
     controls.maxDistance = 1000;
 
-    // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.65));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
     dirLight.position.set(100, 200, 100);
     scene.add(dirLight);
-
     const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.33);
     dirLight2.position.set(-100, -200, -100);
     scene.add(dirLight2);
 
-    // Grid and axes
     const grid = new THREE.GridHelper(500, 50, 0xcccccc, 0xcccccc);
     scene.add(grid);
     scene.add(new THREE.AxesHelper(50));
@@ -176,22 +203,20 @@ function initThree() {
     animate();
 }
 
-
 function animate() {
     requestAnimationFrame(animate);
-    if (controls) controls.update();
-    if (renderer && camera) renderer.render(scene, camera);
+    controls.update();
+    renderer.render(scene, camera);
 }
 
 function onWindowResize() {
-    if (!renderer) return;
     const { clientWidth, clientHeight } = threeContainer;
+    if (clientWidth === 0 || clientHeight === 0) return;
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(clientWidth, clientHeight);
 }
 
-// === SVG TO TEXTURE HELPER (ROBUST VERSION) ===
 async function svgToTexture(stackupSide) {
     return new Promise((resolve, reject) => {
         const svgString = stackupSide.svg;
@@ -213,14 +238,9 @@ async function svgToTexture(stackupSide) {
                  return reject("Invalid viewBox dimensions for texture");
             }
 
-            const baseResolution = 2048; // Px for the longer side
-            if (viewBoxWidth >= viewBoxHeight) {
-                canvas.width = baseResolution;
-                canvas.height = baseResolution * (viewBoxHeight / viewBoxWidth);
-            } else {
-                canvas.height = baseResolution;
-                canvas.width = baseResolution * (viewBoxWidth / viewBoxHeight);
-            }
+            const baseResolution = 2048;
+            canvas.width = baseResolution;
+            canvas.height = baseResolution * (viewBoxHeight / viewBoxWidth);
 
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -231,7 +251,7 @@ async function svgToTexture(stackupSide) {
             resolve(tex);
         };
 
-        img.onerror = (e) => {
+        img.onerror = () => {
              URL.revokeObjectURL(url);
              reject(new Error("Failed to load SVG image for texture generation."));
         }
@@ -239,17 +259,15 @@ async function svgToTexture(stackupSide) {
     });
 }
 
-// === 3D PCB UPDATE ===
 async function update3DView(stackup) {
     pcbGroup.clear();
 
     if (!stackup || !stackup.layers) {
-      console.error("Stackup or layers not found")
+      console.error("Stackup or layers not found");
       return;
     }
 
     const outlineLayer = stackup.layers.find(l => l.type === 'outline');
-
     if (!outlineLayer) {
         console.error("No outline layer found in stackup");
         return;
@@ -261,25 +279,17 @@ async function update3DView(stackup) {
     if (outlineLayer.svg) {
         outlineSvg = outlineLayer.svg;
     } else if (outlineLayer.converter && outlineLayer.converter.layer && outlineLayer.converter.viewBox) {
-        const viewBox = outlineLayer.converter.viewBox;
-        const pathData = outlineLayer.converter.layer.join('');
-        const width = outlineLayer.converter.width;
-        const height = outlineLayer.converter.height;
-        const units = outlineLayer.converter.units || 'mm';
-
+        const { viewBox, layer, width, height, units } = outlineLayer.converter;
+        const pathData = layer.join('');
         const viewBoxWidth = viewBox[2] - viewBox[0];
-        if (width && viewBoxWidth > 0) {
-            scale = width / viewBoxWidth;
-        }
-
-        outlineSvg = `<svg width="${width}${units}" height="${height}${units}" viewBox="${viewBox.join(' ')}" version="1.1" xmlns="http://www.w3.org/2000/svg">${pathData}</svg>`;
+        if (width && viewBoxWidth > 0) scale = width / viewBoxWidth;
+        outlineSvg = `<svg width="${width}${units || 'mm'}" height="${height}${units || 'mm'}" viewBox="${viewBox.join(' ')}" version="1.1" xmlns="http://www.w3.org/2000/svg">${pathData}</svg>`;
     } else {
         console.error("Outline layer found, but it contains no usable SVG data.");
         return;
     }
 
     const BOARD_THICKNESS = 1.6;
-
     const shapes = getShapesFromSVG(outlineSvg);
     if (shapes.length === 0) {
         console.error("Could not extract any shapes from the outline SVG.");
@@ -287,10 +297,7 @@ async function update3DView(stackup) {
     }
 
     const geometry = new THREE.ExtrudeGeometry(shapes, { depth: BOARD_THICKNESS, bevelEnabled: false });
-
-    // Mirror X-axis of geometry, and keep Y-axis flip
     geometry.scale(-scale, -scale, 1);
-
     geometry.computeBoundingBox();
     geometry.center();
 
@@ -301,21 +308,17 @@ async function update3DView(stackup) {
 
     const boardSize = new THREE.Vector3();
     geometry.boundingBox.getSize(boardSize);
+    const [boardWidth, boardDepth, boardThickness] = [boardSize.x, boardSize.y, boardSize.z];
 
-    const boardWidth = boardSize.x;
-    const boardDepth = boardSize.y;
-    const boardThickness = boardSize.z;
-
+    // Create top texture overlay
     if (stackup.top && stackup.top.svg) {
         try {
             const topTex = await svgToTexture(stackup.top);
-
-            // Mirror top texture to match mirrored geometry
             topTex.wrapS = THREE.RepeatWrapping;
             topTex.repeat.x = -1;
 
             const planeGeom = new THREE.PlaneGeometry(boardWidth, boardDepth);
-            const plane = new THREE.Mesh(planeGeom, new THREE.MeshStandardMaterial({ map: topTex, transparent: true, alphaTest: 0.5, side: THREE.FrontSide }));
+            const plane = new THREE.Mesh(planeGeom, new THREE.MeshStandardMaterial({ map: topTex, transparent: true, alphaTest: 0.5 }));
             plane.rotation.x = -Math.PI / 2;
             plane.position.y = (boardThickness / 2) + 0.1;
             pcbGroup.add(plane);
@@ -324,17 +327,13 @@ async function update3DView(stackup) {
         }
     }
 
+    // Create bottom texture overlay
     if (stackup.bottom && stackup.bottom.svg) {
         try {
             const bottomTex = await svgToTexture(stackup.bottom);
-
-            bottomTex.wrapS = THREE.RepeatWrapping;
-            bottomTex.repeat.x = -1;
-
             const planeGeom = new THREE.PlaneGeometry(boardWidth, boardDepth);
-            const plane = new THREE.Mesh(planeGeom, new THREE.MeshStandardMaterial({ map: bottomTex, transparent: true, alphaTest: 0.5, side: THREE.FrontSide }));
-            plane.rotation.x = Math.PI / 2; // Rotated to face downwards
-            plane.rotation.z = Math.PI; // spin 180 around green axis
+            const plane = new THREE.Mesh(planeGeom, new THREE.MeshStandardMaterial({ map: bottomTex, transparent: true, alphaTest: 0.5, side: THREE.BackSide }));
+            plane.rotation.x = -Math.PI / 2;
             plane.position.y = -(boardThickness / 2) - 0.1;
             pcbGroup.add(plane);
         } catch(e) {
@@ -342,11 +341,10 @@ async function update3DView(stackup) {
         }
     }
 
-    // Frame camera
+    // Auto-zoom camera to fit the new PCB
     const box = new THREE.Box3().setFromObject(pcbGroup);
     const size = new THREE.Vector3();
     box.getSize(size);
-
     const maxDim = Math.max(size.x, size.z);
     const fov = camera.fov * (Math.PI / 180);
     const cameraDistance = (maxDim / Math.tan(fov / 2)) * 0.75;
@@ -356,7 +354,6 @@ async function update3DView(stackup) {
     controls.update();
 }
 
-// === SVG TO SHAPES HELPER ===
 function getShapesFromSVG(svgString) {
     if (!svgString) {
         console.error("No SVG data provided to getShapesFromSVG");
@@ -366,7 +363,7 @@ function getShapesFromSVG(svgString) {
         const paths = svgLoader.parse(svgString).paths;
         return paths.flatMap(p => p.toShapes(true));
     } catch (e) {
-        console.warn('SVG parse failed, fallback to empty shapes:', e);
+        console.warn('SVG parse failed, falling back to empty shapes:', e);
         return [];
     }
 }

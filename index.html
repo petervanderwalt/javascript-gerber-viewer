@@ -3,50 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tracespace Gerber Viewer (2D/3D)</title>
+    <title>Tracespace Gerber Viewer (3D)</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        html, body { height: 100%; margin: 0; overflow: hidden; }
-        body { font-family: sans-serif; display: flex; flex-direction: column; background-color: #f4f4f4; }
-        #controls { text-align: center; padding: 0.75rem; border-bottom: 1px solid #ccc; background-color: #fff; flex-shrink: 0; z-index: 10; }
-        .control-group { display: inline-block; margin: 0.25rem 0.5rem; }
-        .control-group label { margin-right: 0.5rem; }
-        #tab-bar { display: flex; justify-content: center; background-color: #e9e9e9; flex-shrink: 0; }
-        .tab-button { padding: 10px 20px; border: none; background-color: transparent; cursor: pointer; font-size: 1rem; border-bottom: 3px solid transparent; transition: border-color 0.2s; }
-        .tab-button.active { border-bottom: 3px solid #007bff; font-weight: bold; }
-        #content-container { flex-grow: 1; position: relative; padding: 1rem; min-height: 0; }
-        .tab-content { display: none; }
-        .tab-content.active { display: flex; width: 100%; height: 100%; border: 1px solid #ccc; border-radius: 8px; background-color: #fff; }
-        #view-2d-top, #view-2d-bottom { padding: 1rem; }
-        #view-2d-top > svg, #view-2d-bottom > svg { width: 100%; height: 100%; object-fit: contain; }
-        #view-3d.active { padding: 0; overflow: hidden; }
-        #view-3d canvas { display: block; }
-        #loading-message { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; background: rgba(255, 255, 255, 0.9); padding: 1rem 2rem; border-radius: 8px; z-index: 100; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      background-color: #f8f9fa;
+    }
+
+    #app-container {
+        flex: 1 1 auto; /* Fill remaining space below navbar */
+        display: flex;
+        flex-direction: row;
+        min-height: 0; /* Important for flex children */
+    }
+
+    #view-3d {
+        flex: 1 1 auto; /* Main view takes up remaining space */
+        position: relative; /* For loading message positioning */
+    }
+
+    #sidebar {
+        flex: 0 0 260px; /* Sidebar with fixed width */
+        padding: 1rem;
+        background-color: #e9ecef;
+        overflow-y: auto;
+        border-left: 1px solid #dee2e6;
+    }
+
+    .view-thumbnail h6 {
+        font-weight: bold;
+        color: #495057;
+    }
+
+    .thumbnail-container {
+        border: 1px solid #ced4da;
+        border-radius: .25rem;
+        background-color: #fff;
+        padding: 5px;
+        min-height: 100px; /* Ensure container has a size even when empty */
+    }
+
+    .thumbnail-container svg {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+
+    #view-3d canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #loading-message { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; background: rgba(255, 255, 255, 0.95); padding: 1rem 2rem; border-radius: 8px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+
     </style>
 </head>
 <body>
-    <div id="controls">
-        <div class="control-group">
-            <label for="gerber-upload">Upload Gerber Zip:</label>
-            <input type="file" id="gerber-upload" accept=".zip">
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark p-2">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Gerber Viewer</a>
+            <div class="d-flex align-items-center flex-wrap">
+                <!-- File Upload -->
+                <div class="me-3 my-1">
+                    <input class="form-control form-control-sm" type="file" id="gerber-upload" accept=".zip">
+                </div>
+
+                <!-- Soldermask -->
+                <div class="me-3 my-1">
+                    <span class="control-label">Soldermask:</span>
+                    <div class="btn-group" role="group" id="soldermask-colors">
+                        <button type="button" class="btn btn-sm btn-outline-light active" data-color="#004225">Green</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#4B0082">Purple</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#D32F2F">Red</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#FFEB3B">Yellow</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#1976D2">Blue</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#FFFFFF">White</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#000000">Black</button>
+                    </div>
+                </div>
+
+                <!-- Silkscreen -->
+                <div class="me-3 my-1">
+                    <span class="control-label">Silkscreen:</span>
+                    <div class="btn-group" role="group" id="silkscreen-colors">
+                        <button type="button" class="btn btn-sm btn-outline-light active" data-color="#FFFFFF">White</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#000000">Black</button>
+                    </div>
+                </div>
+
+                <!-- Copper Finish -->
+                <div class="my-1">
+                    <span class="control-label">Finish:</span>
+                     <div class="btn-group" role="group" id="copper-finish">
+                        <button type="button" class="btn btn-sm btn-outline-light active" data-color="#C0C0C0">HASL</button>
+                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#D4AF37">ENIG</button>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="control-group"> <label for="silkscreen-color">Silkscreen:</label> <input type="color" id="silkscreen-color" value="#FFFFFF"> </div>
-        <div class="control-group"> <label for="soldermask-color">Soldermask:</label> <input type="color" id="soldermask-color" value="#004225"> </div>
-        <div class="control-group"> <label for="copper-color">Copper:</label> <input type="color" id="copper-color" value="#C09548"> </div>
-        <button id="update-colors-btn" disabled>Update Colors</button>
+    </nav>
+
+    <div id="app-container">
+        <!-- Main 3D View -->
+        <div id="view-3d">
+            <div id="loading-message">Processing files...</div>
+        </div>
+
+        <!-- Sidebar for 2D Thumbnails and Downloads -->
+        <div id="sidebar">
+            <h5 class="mb-3">2D Views</h5>
+            <div class="view-thumbnail">
+                <h6>Top View</h6>
+                <div id="view-2d-top-thumb" class="thumbnail-container"></div>
+                <a id="download-top-svg" class="btn btn-sm btn-secondary w-100 mt-2 disabled" download="top-view.svg">Download SVG</a>
+            </div>
+            <hr class="my-3">
+            <div class="view-thumbnail">
+                <h6>Bottom View</h6>
+                <div id="view-2d-bottom-thumb" class="thumbnail-container"></div>
+                <a id="download-bottom-svg" class="btn btn-sm btn-secondary w-100 mt-2 disabled" download="bottom-view.svg">Download SVG</a>
+            </div>
+        </div>
     </div>
-    <div id="tab-bar">
-        <!-- Reverted to 2D view as default -->
-        <button class="tab-button active" data-tab="view-2d-top">Top View</button>
-        <button class="tab-button" data-tab="view-2d-bottom">Bottom View</button>
-        <button class="tab-button" data-tab="view-3d">3D View</button>
-    </div>
-    <div id="content-container">
-        <!-- Reverted to 2D view as default -->
-        <div id="view-2d-top" class="tab-content active"></div>
-        <div id="view-2d-bottom" class="tab-content"></div>
-        <div id="view-3d" class="tab-content"></div>
-    </div>
-    <div id="loading-message">Processing files...</div>
+
+    <!-- ES Module Shims for browser compatibility -->
     <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
     <script type="importmap">
     { "imports": {
@@ -54,8 +145,11 @@
             "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
     } }
     </script>
+    <!-- Libraries -->
     <script src="https://unpkg.com/pcb-stackup@^4.0.0/dist/pcb-stackup.min.js"></script>
     <script src="https://unpkg.com/jszip@3.6.0/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Main Application Logic -->
     <script src="main.js" type="module"></script>
 </body>
 </html>
