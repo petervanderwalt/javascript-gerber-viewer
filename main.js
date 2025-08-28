@@ -111,7 +111,18 @@ function renderAllViews(layers) {
     const soldermaskColor = getActiveColor(soldermaskBtnGroup);
     const silkscreenColor = getActiveColor(silkscreenBtnGroup);
     const finishedCopperColor = getActiveColor(copperFinishBtnGroup);
-    const soldermaskRgba = hexToRgba(soldermaskColor, 0.75);
+
+    // *** MODIFICATION START ***
+    // Make soldermask opacity conditional for better color representation.
+    // Opaque colors (black, white) should not be transparent, while others should be.
+    let soldermaskAlpha;
+    if (soldermaskColor === '#000000' || soldermaskColor === '#FFFFFF') {
+        soldermaskAlpha = 0.95; // Nearly opaque for solid colors
+    } else {
+        soldermaskAlpha = 0.75; // Standard transparency for others
+    }
+    const soldermaskRgba = hexToRgba(soldermaskColor, soldermaskAlpha);
+    // *** MODIFICATION END ***
 
     const options = {
         color: {
