@@ -32,7 +32,7 @@
     }
 
     #sidebar {
-        flex: 0 0 260px; /* Sidebar with fixed width */
+        flex: 0 0 280px; /* Sidebar with fixed width, slightly wider for new controls */
         padding: 1rem;
         background-color: #e9ecef;
         overflow-y: auto;
@@ -65,6 +65,8 @@
     }
 
     #loading-message { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; background: rgba(255, 255, 255, 0.95); padding: 1rem 2rem; border-radius: 8px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+
+    .dpi-input { max-width: 80px; }
 
     </style>
 </head>
@@ -127,12 +129,20 @@
                 <h6>Top View</h6>
                 <div id="view-2d-top-thumb" class="thumbnail-container"></div>
                 <a id="download-top-svg" class="btn btn-sm btn-secondary w-100 mt-2 disabled" download="top-view.svg">Download SVG</a>
+                <div class="d-flex align-items-center mt-2">
+                    <input type="number" class="form-control form-control-sm dpi-input me-2" value="300" id="dpi-top-input">
+                    <a id="download-top-png" class="btn btn-sm btn-primary w-100 disabled">Download PNG</a>
+                </div>
             </div>
             <hr class="my-3">
             <div class="view-thumbnail">
                 <h6>Bottom View</h6>
                 <div id="view-2d-bottom-thumb" class="thumbnail-container"></div>
                 <a id="download-bottom-svg" class="btn btn-sm btn-secondary w-100 mt-2 disabled" download="bottom-view.svg">Download SVG</a>
+                 <div class="d-flex align-items-center mt-2">
+                    <input type="number" class="form-control form-control-sm dpi-input me-2" value="300" id="dpi-bottom-input">
+                    <a id="download-bottom-png" class="btn btn-sm btn-primary w-100 disabled">Download PNG</a>
+                </div>
             </div>
         </div>
     </div>

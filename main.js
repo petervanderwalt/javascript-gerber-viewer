@@ -13,6 +13,12 @@ const topThumbContainer = document.getElementById('view-2d-top-thumb');
 const bottomThumbContainer = document.getElementById('view-2d-bottom-thumb');
 const downloadTopBtn = document.getElementById('download-top-svg');
 const downloadBottomBtn = document.getElementById('download-bottom-svg');
+// PNG Export elements
+const dpiTopInput = document.getElementById('dpi-top-input');
+const dpiBottomInput = document.getElementById('dpi-bottom-input');
+const downloadTopPngBtn = document.getElementById('download-top-png');
+const downloadBottomPngBtn = document.getElementById('download-bottom-png');
+
 
 // Navbar controls
 const soldermaskBtnGroup = document.getElementById('soldermask-colors');
@@ -24,6 +30,10 @@ let scene, camera, renderer, controls, pcbGroup, svgLoader;
 
 // === DATA STORE ===
 let loadedLayers = [];
+let currentStackup = null; // Store the latest stackup result for exports
+
+// === CONSTANTS ===
+const MM_PER_INCH = 25.4;
 
 // === INITIALIZATION & EVENT LISTENERS ===
 initThree();
@@ -33,6 +43,11 @@ uploadInput.addEventListener('change', handleFileSelect);
 soldermaskBtnGroup.addEventListener('click', handleOptionChange);
 silkscreenBtnGroup.addEventListener('click', handleOptionChange);
 copperFinishBtnGroup.addEventListener('click', handleOptionChange);
+
+// Listen for clicks on the PNG download buttons
+downloadTopPngBtn.addEventListener('click', () => handlePngExport('top'));
+downloadBottomPngBtn.addEventListener('click', () => handlePngExport('bottom'));
+
 
 // === CORE LOGIC ===
 
@@ -68,7 +83,6 @@ function handleFileSelect(event) {
     if (!file) return;
 
     loadingMessage.style.display = 'block';
-    //sidebar.classList.add('d-none'); // Hide sidebar while processing new file
 
     JSZip.loadAsync(file)
         .then(zip => {
@@ -113,6 +127,7 @@ function renderAllViews(layers) {
 
     pcbStackup(layersCopy, options)
         .then(stackup => {
+            currentStackup = stackup; // Cache the result
             // Update the 3D view first
             update3DView(stackup);
 
@@ -124,11 +139,13 @@ function renderAllViews(layers) {
                 const topSvgBlob = new Blob([stackup.top.svg], { type: 'image/svg+xml;charset=utf-8' });
                 downloadTopBtn.href = URL.createObjectURL(topSvgBlob);
                 downloadTopBtn.classList.remove('disabled');
+                downloadTopPngBtn.classList.remove('disabled'); // Enable PNG button
                 hasContent = true;
             } else {
                 topThumbContainer.innerHTML = '<p class="text-muted text-center small p-2">No top view generated.</p>';
                 downloadTopBtn.href = '#';
                 downloadTopBtn.classList.add('disabled');
+                downloadTopPngBtn.classList.add('disabled'); // Disable PNG button
             }
 
             // Populate bottom view thumbnail and download link
@@ -137,16 +154,13 @@ function renderAllViews(layers) {
                 const bottomSvgBlob = new Blob([stackup.bottom.svg], { type: 'image/svg+xml;charset=utf-8' });
                 downloadBottomBtn.href = URL.createObjectURL(bottomSvgBlob);
                 downloadBottomBtn.classList.remove('disabled');
+                downloadBottomPngBtn.classList.remove('disabled'); // Enable PNG button
                 hasContent = true;
             } else {
                 bottomThumbContainer.innerHTML = '<p class="text-muted text-center small p-2">No bottom view generated.</p>';
                 downloadBottomBtn.href = '#';
                 downloadBottomBtn.classList.add('disabled');
-            }
-
-            // Only show the sidebar if we successfully generated at least one view
-            if (hasContent) {
-                //sidebar.classList.remove('d-none');
+                downloadBottomPngBtn.classList.add('disabled'); // Disable PNG button
             }
 
             loadingMessage.style.display = 'none';
@@ -157,10 +171,73 @@ function renderAllViews(layers) {
 function handleError(error) {
     console.error('An error occurred:', error);
     alert('An error occurred processing the Gerber files. Check the console for details.');
-    // Ensure UI is in a clean state after an error
-    //sidebar.classList.add('d-none');
     loadingMessage.style.display = 'none';
 }
+
+// === PNG EXPORT FUNCTION ===
+
+function handlePngExport(side) {
+    if (!currentStackup) {
+        alert('No stackup data is available. Please load a file first.');
+        return;
+    }
+
+    const viewData = currentStackup[side];
+    const dpiInput = (side === 'top') ? dpiTopInput : dpiBottomInput;
+
+    if (!viewData || !viewData.svg) {
+        alert(`No ${side} view is available to export.`);
+        return;
+    }
+
+    const dpi = parseInt(dpiInput.value, 10);
+    if (isNaN(dpi) || dpi <= 0) {
+        alert('Please enter a valid, positive DPI value.');
+        return;
+    }
+
+    const { svg, width, height, units } = viewData;
+
+    if (units !== 'mm') {
+        console.warn(`PNG export for units "${units}" may be inaccurate. Assuming mm.`);
+    }
+
+    const widthInches = width / MM_PER_INCH;
+    const heightInches = height / MM_PER_INCH;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(widthInches * dpi);
+    canvas.height = Math.round(heightInches * dpi);
+    const ctx = canvas.getContext('2d');
+
+    const img = new Image();
+    const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url); // Clean up blob URL
+
+        const pngUrl = canvas.toDataURL('image/png');
+
+        // Trigger download
+        const link = document.createElement('a');
+        link.href = pngUrl;
+        link.download = `${side}-view-${dpi}dpi.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    img.onerror = (err) => {
+        console.error('Image loading for PNG conversion failed:', err);
+        alert('An error occurred while preparing the PNG file. See console for details.');
+        URL.revokeObjectURL(url);
+    };
+
+    img.src = url;
+}
+
 
 // === THREE.JS FUNCTIONS ===
 
