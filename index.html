@@ -20,19 +20,27 @@
     }
 
     #app-container {
-        flex: 1 1 auto; /* Fill remaining space below navbar */
+        flex: 1 1 auto;
         display: flex;
         flex-direction: row;
-        min-height: 0; /* Important for flex children */
+        min-height: 0;
+    }
+
+    #left-sidebar {
+        flex: 0 0 280px; /* New left sidebar for controls */
+        padding: 1rem;
+        background-color: #e9ecef;
+        overflow-y: auto;
+        border-right: 1px solid #dee2e6;
     }
 
     #view-3d {
-        flex: 1 1 auto; /* Main view takes up remaining space */
-        position: relative; /* For loading message positioning */
+        flex: 1 1 auto;
+        position: relative;
     }
 
-    #sidebar {
-        flex: 0 0 280px; /* Sidebar with fixed width, slightly wider for new controls */
+    #right-sidebar {
+        flex: 0 0 280px;
         padding: 1rem;
         background-color: #e9ecef;
         overflow-y: auto;
@@ -49,7 +57,7 @@
         border-radius: .25rem;
         background-color: #fff;
         padding: 5px;
-        min-height: 100px; /* Ensure container has a size even when empty */
+        min-height: 100px;
     }
 
     .thumbnail-container svg {
@@ -66,6 +74,13 @@
 
     #loading-message { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; background: rgba(255, 255, 255, 0.95); padding: 1rem 2rem; border-radius: 8px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
 
+    .control-label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: #495057;
+        font-weight: bold;
+    }
+
     .dpi-input { max-width: 80px; }
 
     </style>
@@ -75,55 +90,59 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark p-2">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">Gerber Viewer</a>
-            <div class="d-flex align-items-center flex-wrap">
-                <!-- File Upload -->
-                <div class="me-3 my-1">
-                    <input class="form-control form-control-sm" type="file" id="gerber-upload" accept=".zip">
-                </div>
-
-                <!-- Soldermask -->
-                <div class="me-3 my-1">
-                    <span class="control-label">Soldermask:</span>
-                    <div class="btn-group" role="group" id="soldermask-colors">
-                        <button type="button" class="btn btn-sm btn-outline-light active" data-color="#004225">Green</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#4B0082">Purple</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#D32F2F">Red</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#FFEB3B">Yellow</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#1976D2">Blue</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#FFFFFF">White</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#000000">Black</button>
-                    </div>
-                </div>
-
-                <!-- Silkscreen -->
-                <div class="me-3 my-1">
-                    <span class="control-label">Silkscreen:</span>
-                    <div class="btn-group" role="group" id="silkscreen-colors">
-                        <button type="button" class="btn btn-sm btn-outline-light active" data-color="#FFFFFF">White</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#000000">Black</button>
-                    </div>
-                </div>
-
-                <!-- Copper Finish -->
-                <div class="my-1">
-                    <span class="control-label">Finish:</span>
-                     <div class="btn-group" role="group" id="copper-finish">
-                        <button type="button" class="btn btn-sm btn-outline-light active" data-color="#C0C0C0">HASL</button>
-                        <button type="button" class="btn btn-sm btn-outline-light" data-color="#D4AF37">ENIG</button>
-                    </div>
-                </div>
-            </div>
         </div>
     </nav>
 
     <div id="app-container">
+        <!-- Left Sidebar for Controls -->
+        <div id="left-sidebar">
+            <h5 class="mb-3">Controls</h5>
+            <!-- File Upload -->
+            <div class="mb-3">
+                <label for="gerber-upload" class="form-label control-label">Load Gerber (.zip)</label>
+                <input class="form-control form-control-sm" type="file" id="gerber-upload" accept=".zip">
+            </div>
+            <hr>
+            <!-- Soldermask -->
+            <div class="mb-3">
+                <span class="control-label">Soldermask</span>
+                <div class="w-100" role="group" id="soldermask-colors">
+                    <button type="button" class="btn btn-sm btn-outline-secondary active m-1" data-color="#004225">Green</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#4B0082">Purple</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#D32F2F">Red</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#FFEB3B">Yellow</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#1976D2">Blue</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#FFFFFF">White</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#000000">Black</button>
+                </div>
+            </div>
+
+            <!-- Silkscreen -->
+            <div class="mb-3">
+                <span class="control-label">Silkscreen</span>
+                <div class="w-100" role="group" id="silkscreen-colors">
+                    <button type="button" class="btn btn-sm btn-outline-secondary active m-1" data-color="#FFFFFF">White</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#000000">Black</button>
+                </div>
+            </div>
+
+            <!-- Copper Finish -->
+            <div class="mb-3">
+                <span class="control-label">Copper Finish</span>
+                 <div class="w-100" role="group" id="copper-finish">
+                    <button type="button" class="btn btn-sm btn-outline-secondary active m-1" data-color="#C0C0C0">HASL</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary m-1" data-color="#D4AF37">ENIG</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Main 3D View -->
         <div id="view-3d">
             <div id="loading-message">Processing files...</div>
         </div>
 
-        <!-- Sidebar for 2D Thumbnails and Downloads -->
-        <div id="sidebar">
+        <!-- Right Sidebar for 2D Thumbnails and Downloads -->
+        <div id="right-sidebar">
             <h5 class="mb-3">2D Views</h5>
             <div class="view-thumbnail">
                 <h6>Top View</h6>

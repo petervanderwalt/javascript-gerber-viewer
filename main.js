@@ -89,15 +89,28 @@ function handleFileSelect(event) {
             const promises = [];
             loadedLayers = [];
             zip.forEach((_, zipEntry) => {
-                if (!zipEntry.dir) {
-                    promises.push(zipEntry.async('string').then(content => {
-                        loadedLayers.push({ filename: zipEntry.name, gerber: content });
-                    }));
+                const fileName = zipEntry.name;
+
+                // Exclude directories and common metadata files from zip archives
+                if (zipEntry.dir || fileName.startsWith('__MACOSX') || fileName.endsWith('.DS_Store')) {
+                    return;
                 }
+
+                promises.push(zipEntry.async('string').then(content => {
+                    // Ensure content is not null, undefined, or just whitespace before adding
+                    if (content && content.trim()) {
+                        loadedLayers.push({ filename: fileName, gerber: content });
+                    }
+                }));
             });
             return Promise.all(promises);
         })
-        .then(() => renderAllViews(loadedLayers))
+        .then(() => {
+            if (loadedLayers.length === 0) {
+                throw new Error("No valid Gerber files were found in the zip archive.");
+            }
+            renderAllViews(loadedLayers);
+        })
         .catch(handleError);
 }
 
@@ -112,17 +125,13 @@ function renderAllViews(layers) {
     const silkscreenColor = getActiveColor(silkscreenBtnGroup);
     const finishedCopperColor = getActiveColor(copperFinishBtnGroup);
 
-    // *** MODIFICATION START ***
-    // Make soldermask opacity conditional for better color representation.
-    // Opaque colors (black, white) should not be transparent, while others should be.
     let soldermaskAlpha;
     if (soldermaskColor === '#000000' || soldermaskColor === '#FFFFFF') {
-        soldermaskAlpha = 0.95; // Nearly opaque for solid colors
+        soldermaskAlpha = 0.98;
     } else {
-        soldermaskAlpha = 0.75; // Standard transparency for others
+        soldermaskAlpha = 0.75;
     }
     const soldermaskRgba = hexToRgba(soldermaskColor, soldermaskAlpha);
-    // *** MODIFICATION END ***
 
     const options = {
         color: {
@@ -133,45 +142,48 @@ function renderAllViews(layers) {
           cf: finishedCopperColor,
           sp: '#999',
           out: '#000'
-        }
+        },
+        // *** MODIFICATION START ***
+        // This is the crucial fix. It tells the Gerber parser to treat the
+        // outline layer as a filled polygon instead of a stroked path, which
+        // is necessary for creating a 3D shape.
+        plotAsOutline: true
+        // *** MODIFICATION END ***
     };
 
-    pcbStackup(layersCopy, options)
+    Promise.resolve(pcbStackup(layersCopy, options))
         .then(stackup => {
             currentStackup = stackup; // Cache the result
-            // Update the 3D view first
             update3DView(stackup);
 
             let hasContent = false;
 
-            // Populate top view thumbnail and download link
             if (stackup && stackup.top && stackup.top.svg) {
                 topThumbContainer.innerHTML = stackup.top.svg;
                 const topSvgBlob = new Blob([stackup.top.svg], { type: 'image/svg+xml;charset=utf-8' });
                 downloadTopBtn.href = URL.createObjectURL(topSvgBlob);
                 downloadTopBtn.classList.remove('disabled');
-                downloadTopPngBtn.classList.remove('disabled'); // Enable PNG button
+                downloadTopPngBtn.classList.remove('disabled');
                 hasContent = true;
             } else {
                 topThumbContainer.innerHTML = '<p class="text-muted text-center small p-2">No top view generated.</p>';
                 downloadTopBtn.href = '#';
                 downloadTopBtn.classList.add('disabled');
-                downloadTopPngBtn.classList.add('disabled'); // Disable PNG button
+                downloadTopPngBtn.classList.add('disabled');
             }
 
-            // Populate bottom view thumbnail and download link
             if (stackup && stackup.bottom && stackup.bottom.svg) {
                 bottomThumbContainer.innerHTML = stackup.bottom.svg;
                 const bottomSvgBlob = new Blob([stackup.bottom.svg], { type: 'image/svg+xml;charset=utf-8' });
                 downloadBottomBtn.href = URL.createObjectURL(bottomSvgBlob);
                 downloadBottomBtn.classList.remove('disabled');
-                downloadBottomPngBtn.classList.remove('disabled'); // Enable PNG button
+                downloadBottomPngBtn.classList.remove('disabled');
                 hasContent = true;
             } else {
                 bottomThumbContainer.innerHTML = '<p class="text-muted text-center small p-2">No bottom view generated.</p>';
                 downloadBottomBtn.href = '#';
                 downloadBottomBtn.classList.add('disabled');
-                downloadBottomPngBtn.classList.add('disabled'); // Disable PNG button
+                downloadBottomPngBtn.classList.add('disabled');
             }
 
             loadingMessage.style.display = 'none';
@@ -181,7 +193,7 @@ function renderAllViews(layers) {
 
 function handleError(error) {
     console.error('An error occurred:', error);
-    alert('An error occurred processing the Gerber files. Check the console for details.');
+    alert('An error occurred processing the Gerber files. Check the console for details.\n\n' + error.message);
     loadingMessage.style.display = 'none';
 }
 
@@ -227,11 +239,10 @@ function handlePngExport(side) {
 
     img.onload = () => {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url); // Clean up blob URL
+        URL.revokeObjectURL(url);
 
         const pngUrl = canvas.toDataURL('image/png');
 
-        // Trigger download
         const link = document.createElement('a');
         link.href = pngUrl;
         link.download = `${side}-view-${dpi}dpi.png`;
@@ -357,8 +368,7 @@ async function update3DView(stackup) {
 
     const outlineLayer = stackup.layers.find(l => l.type === 'outline');
     if (!outlineLayer) {
-        console.error("No outline layer found in stackup");
-        return;
+        throw new Error("Failed to find a board outline layer in the provided files. Please ensure your outline file has a standard name (e.g., profile.gbr, board.gko).");
     }
 
     let outlineSvg;
@@ -379,6 +389,7 @@ async function update3DView(stackup) {
 
     const BOARD_THICKNESS = 1.6;
     const shapes = getShapesFromSVG(outlineSvg);
+    console.log(shapes)
     if (shapes.length === 0) {
         console.error("Could not extract any shapes from the outline SVG.");
         return;
@@ -448,6 +459,7 @@ function getShapesFromSVG(svgString) {
         return [];
     }
     try {
+        console.log(svgString)
         const paths = svgLoader.parse(svgString).paths;
         return paths.flatMap(p => p.toShapes(true));
     } catch (e) {
