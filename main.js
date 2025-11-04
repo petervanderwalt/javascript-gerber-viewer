@@ -25,6 +25,10 @@ const soldermaskBtnGroup = document.getElementById('soldermask-colors');
 const silkscreenBtnGroup = document.getElementById('silkscreen-colors');
 const copperFinishBtnGroup = document.getElementById('copper-finish');
 
+const pcbThicknessInput = document.getElementById('pcb-thickness');
+let pcbThickness = parseFloat(pcbThicknessInput?.value || 1.6);
+
+
 // === THREE.JS SHARED VARIABLES ===
 let scene, camera, renderer, controls, pcbGroup, svgLoader;
 
@@ -43,6 +47,14 @@ uploadInput.addEventListener('change', handleFileSelect);
 soldermaskBtnGroup.addEventListener('click', handleOptionChange);
 silkscreenBtnGroup.addEventListener('click', handleOptionChange);
 copperFinishBtnGroup.addEventListener('click', handleOptionChange);
+pcbThicknessInput.addEventListener('input', () => {
+  const val = parseFloat(pcbThicknessInput.value);
+  if (!isNaN(val) && val > 0) {
+    pcbThickness = val;
+    if (currentStackup) update3DView(currentStackup);
+  }
+});
+
 
 // Listen for clicks on the PNG download buttons
 downloadTopPngBtn.addEventListener('click', () => handlePngExport('top'));
@@ -387,7 +399,7 @@ async function update3DView(stackup) {
         return;
     }
 
-    const BOARD_THICKNESS = 1.6;
+    const BOARD_THICKNESS = pcbThickness || 1.6;
     const shapes = getShapesFromSVG(outlineSvg);
     console.log(shapes)
     if (shapes.length === 0) {
