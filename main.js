@@ -90,6 +90,68 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function getFileBasename(filename) {
+    return filename.split('/').pop().split('\\').pop();
+}
+
+function detectLayerFilename(layer, innerLayerCounter) {
+    const basename = getFileBasename(layer.filename).toLowerCase();
+    const gerber = layer.gerber || '';
+    const header = gerber.slice(0, 4096).toLowerCase();
+    const combined = `${basename}\n${header}`;
+
+    if (basename.endsWith('.gbrjob')) return null;
+
+    if (
+        combined.includes('profile') ||
+        combined.includes('outline') ||
+        combined.includes('%tf.filefunction,profile') ||
+        combined.includes('%tf.filefunction,other,outline')
+    ) {
+        return 'board.gko';
+    }
+
+    if (combined.includes('drill') || basename.endsWith('.drl') || basename.endsWith('.xln')) {
+        return 'drill.xln';
+    }
+
+    if (combined.includes('solderpaste top') || combined.includes('paste_top') || combined.includes('top paste')) {
+        return 'top.gtp';
+    }
+    if (combined.includes('solderpaste bottom') || combined.includes('paste_bottom') || combined.includes('bottom paste')) {
+        return 'bottom.gbp';
+    }
+    if (combined.includes('soldermask top') || combined.includes('soldermask_top') || combined.includes('top soldermask')) {
+        return 'top.gts';
+    }
+    if (combined.includes('soldermask bottom') || combined.includes('soldermask_bottom') || combined.includes('bottom soldermask')) {
+        return 'bottom.gbs';
+    }
+    if (combined.includes('silkscreen top') || combined.includes('silkscreen_top') || combined.includes('top silkscreen')) {
+        return 'top.gto';
+    }
+    if (combined.includes('silkscreen bottom') || combined.includes('silkscreen_bottom') || combined.includes('bottom silkscreen')) {
+        return 'bottom.gbo';
+    }
+    if (combined.includes('top copper') || combined.includes('copper_top')) {
+        return 'top.gtl';
+    }
+    if (combined.includes('bottom copper') || combined.includes('copper_bottom')) {
+        return 'bottom.gbl';
+    }
+
+    if (
+        combined.includes('inner copper') ||
+        combined.includes('copper_inner') ||
+        combined.includes('%tf.filefunction,copper,l')
+    ) {
+        const index = innerLayerCounter.value++;
+        return `inner${index}.g${index + 1}`;
+    }
+
+    return getFileBasename(layer.filename);
+}
+
 function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -130,7 +192,35 @@ function renderAllViews(layers) {
     if (layers.length === 0) return;
 
     loadingMessage.style.display = 'block';
-    const layersCopy = JSON.parse(JSON.stringify(layers));
+    
+    // helps pcb-stackup correctly identify types and sides.
+    const innerLayerCounter = { value: 1 };
+    const layersCopy = layers
+        .filter(l => {
+            const fn = getFileBasename(l.filename).toLowerCase();
+            // Exclude common non-gerber files that might confuse pcb-stackup
+            if (
+                fn.endsWith('.txt') ||
+                fn.endsWith('.pdf') ||
+                fn.endsWith('.png') ||
+                fn.endsWith('.jpg') ||
+                fn.endsWith('.jpeg') ||
+                fn.endsWith('.csv') ||
+                fn.endsWith('.gbrjob')
+            ) return false;
+            return true;
+        })
+        .map(l => {
+            const newFilename = detectLayerFilename(l, innerLayerCounter);
+
+            return { 
+                filename: newFilename, 
+                gerber: l.gerber
+            };
+        })
+        .filter(l => l.filename);
+
+    console.log("Layers passed to pcbStackup:", layersCopy.map(l => l.filename));
 
     // Get current colors from active buttons
     const soldermaskColor = getActiveColor(soldermaskBtnGroup);
@@ -159,18 +249,25 @@ function renderAllViews(layers) {
         // This is the crucial fix. It tells the Gerber parser to treat the
         // outline layer as a filled polygon instead of a stroked path, which
         // is necessary for creating a 3D shape.
-        plotAsOutline: true
+        plotAsOutline: true,
+        maskWithOutline: true
         // *** MODIFICATION END ***
     };
 
     Promise.resolve(pcbStackup(layersCopy, options))
         .then(stackup => {
+            console.log("pcbStackup result:", stackup);
+            if (stackup.layers) {
+                console.log("Identified layers:", stackup.layers.map(l => ({ filename: l.filename, type: l.type, side: l.side })));
+            }
             currentStackup = stackup; // Cache the result
             update3DView(stackup);
 
             let hasContent = false;
 
             if (stackup && stackup.top && stackup.top.svg) {
+                // Sanitize any NaN values that might be in the SVG string from pcb-stackup
+                stackup.top.svg = stackup.top.svg.replace(/="NaN"/g, '="0"');
                 topThumbContainer.innerHTML = stackup.top.svg;
                 const topSvgBlob = new Blob([stackup.top.svg], { type: 'image/svg+xml;charset=utf-8' });
                 downloadTopBtn.href = URL.createObjectURL(topSvgBlob);
@@ -185,6 +282,8 @@ function renderAllViews(layers) {
             }
 
             if (stackup && stackup.bottom && stackup.bottom.svg) {
+                // Sanitize any NaN values that might be in the SVG string from pcb-stackup
+                stackup.bottom.svg = stackup.bottom.svg.replace(/="NaN"/g, '="0"');
                 bottomThumbContainer.innerHTML = stackup.bottom.svg;
                 const bottomSvgBlob = new Blob([stackup.bottom.svg], { type: 'image/svg+xml;charset=utf-8' });
                 downloadBottomBtn.href = URL.createObjectURL(bottomSvgBlob);
@@ -332,6 +431,7 @@ async function svgToTexture(stackupSide) {
     return new Promise((resolve, reject) => {
         const svgString = stackupSide.svg;
         if (!svgString || !stackupSide.viewBox) {
+            console.error("Invalid stackup side data:", stackupSide);
             return reject("Invalid stackup side data for texture generation");
         }
 
@@ -341,10 +441,10 @@ async function svgToTexture(stackupSide) {
 
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            const viewBoxWidth = stackupSide.viewBox[2] - stackupSide.viewBox[0];
-            const viewBoxHeight = stackupSide.viewBox[3] - stackupSide.viewBox[1];
+            const viewBoxWidth = (stackupSide.viewBox && stackupSide.viewBox[2]) ? (stackupSide.viewBox[2] - stackupSide.viewBox[0]) : 0;
+            const viewBoxHeight = (stackupSide.viewBox && stackupSide.viewBox[3]) ? (stackupSide.viewBox[3] - stackupSide.viewBox[1]) : 0;
 
-            if (viewBoxWidth <= 0 || viewBoxHeight <= 0) {
+            if (viewBoxWidth <= 0 || viewBoxHeight <= 0 || isNaN(viewBoxWidth) || isNaN(viewBoxHeight)) {
                  URL.revokeObjectURL(url);
                  return reject("Invalid viewBox dimensions for texture");
             }
@@ -352,6 +452,10 @@ async function svgToTexture(stackupSide) {
             const baseResolution = 2048;
             canvas.width = baseResolution;
             canvas.height = baseResolution * (viewBoxHeight / viewBoxWidth);
+            
+            if (isNaN(canvas.height) || canvas.height <= 0) {
+                canvas.height = baseResolution; // Fallback to square
+            }
 
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -391,14 +495,24 @@ async function update3DView(stackup) {
     } else if (outlineLayer.converter && outlineLayer.converter.layer && outlineLayer.converter.viewBox) {
         const { viewBox, layer, width, height, units } = outlineLayer.converter;
         const pathData = layer.join('');
-        const viewBoxWidth = viewBox[2] - viewBox[0];
+        const viewBoxWidth = (viewBox && viewBox[2]) ? (viewBox[2] - viewBox[0]) : 0;
         if (width && viewBoxWidth > 0) scale = width / viewBoxWidth;
-        outlineSvg = `<svg width="${width}${units || 'mm'}" height="${height}${units || 'mm'}" viewBox="${viewBox.join(' ')}" version="1.1" xmlns="http://www.w3.org/2000/svg">${pathData}</svg>`;
+        if (isNaN(scale) || scale === 0) scale = 1.0;
+        
+        // Ensure we don't have NaN in the dimensions
+        const w = (isNaN(width) || !width) ? 0 : width;
+        const h = (isNaN(height) || !height) ? 0 : height;
+        const vb = (viewBox && Array.isArray(viewBox)) ? viewBox.map(v => isNaN(v) ? 0 : v) : [0,0,0,0];
+
+        outlineSvg = `<svg width="${w}${units || 'mm'}" height="${h}${units || 'mm'}" viewBox="${vb.join(' ')}" version="1.1" xmlns="http://www.w3.org/2000/svg">${pathData}</svg>`;
     } else {
         console.error("Outline layer found, but it contains no usable SVG data.");
         return;
     }
 
+    // Sanitize any NaN values in the outline SVG before processing
+    outlineSvg = outlineSvg.replace(/="NaN"/g, '="0"');
+    
     const BOARD_THICKNESS = pcbThickness || 1.6;
     const shapes = getShapesFromSVG(outlineSvg);
     console.log(shapes)
